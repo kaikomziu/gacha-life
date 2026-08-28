@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GACHA LIFE — 一生ガチャを引くだけ</title>
+<meta name="description" content="アップグレードも戦闘もない。ただ一生ガチャを引くだけのRNGゲーム。天井あり、図鑑71種、実績40種。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎰</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">GACHA LIFE <small>一生ガチャを引くだけ</small></div>
+    <div class="resources">
+      <div class="res"><span class="lbl">💎</span><span id="gems">0</span><span class="rate" id="gemrate">+0/秒</span></div>
+      <div class="res"><span class="lbl">✦星屑</span><span id="dust">0</span></div>
+    </div>
+  </header>
+
+  <div class="rankbar">
+    <div class="row"><span class="name" id="rankName">Lv.1</span><span id="rankProg">0 / 0</span></div>
+    <div class="track"><i id="rankFill" style="width:0%"></i></div>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="gacha" class="on">ガチャ</button>
+    <button data-tab="collection">図鑑</button>
+    <button data-tab="ach">実績</button>
+    <button data-tab="shop">星屑ショップ</button>
+    <button data-tab="stats">記録</button>
+  </div>
+
+  <!-- GACHA -->
+  <section class="view on" id="view-gacha">
+    <div class="machine">
+      <div class="capsule">🎰</div>
+      <h2>運命のカプセルトイ</h2>
+      <p>単発 💎150 ／ 10連 💎1,400（R以上1つ保証）</p>
+      <div class="pulls">
+        <button class="pullbtn" id="btnSingle">単発を引く<small>💎150</small></button>
+        <button class="pullbtn alt" id="btnTen">10連を引く<small>💎1,400</small></button>
+        <button class="pullbtn free" id="btnFree">無料枠<small>—</small></button>
+      </div>
+      <div class="pity" id="pityInfo"></div>
+      <div class="odds" id="odds"></div>
+    </div>
+
+    <div class="feed">
+      <h3>最近の排出</h3>
+      <div id="feed"></div>
+    </div>
+  </section>
+
+  <!-- COLLECTION -->
+  <section class="view" id="view-collection">
+    <div class="colhead">
+      <strong id="colCount">0 / 0</strong>
+      <div class="filters" id="colFilters">
+        <button data-f="ALL" class="on">全部</button>
+        <button data-f="N">N</button>
+        <button data-f="R">R</button>
+        <button data-f="SR">SR</button>
+        <button data-f="SSR">SSR</button>
+        <button data-f="UR">UR</button>
+        <button data-f="LR">LR</button>
+      </div>
+    </div>
+    <div class="grid" id="colGrid"></div>
+  </section>
+
+  <!-- ACHIEVEMENTS -->
+  <section class="view" id="view-ach">
+    <div class="colhead"><strong>実績 <span id="achCount">0 / 0</span></strong></div>
+    <div class="ach" id="achList"></div>
+  </section>
+
+  <!-- SHOP -->
+  <section class="view" id="view-shop">
+    <div class="panelbox">
+      <h3>星屑ショップ　所持: ✦ <span id="shopDust">0</span></h3>
+      <p style="color:var(--dim);font-size:.8rem;margin-bottom:8px">重複を引くと星屑がたまる。使い道はここ。</p>
+      <div id="shopList"></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section class="view" id="view-stats">
+    <div class="panelbox">
+      <h3>これまでの記録</h3>
+      <div class="statgrid" id="statGrid"></div>
+    </div>
+    <div class="panelbox">
+      <h3>データ</h3>
+      <button class="danger" id="resetBtn">全データをリセット</button>
+    </div>
+  </section>
+
+  <footer>
+    <span id="ver">v?</span> ・ <a href="#" id="changelogBtn">更新履歴</a><br>
+    セーブはこのブラウザに自動保存されます。
+  </footer>
+</div>
+
+<div class="modal" id="modal"><div class="sheet"></div></div>
+<div id="overlay"></div>
+<div id="toasts"></div>
+
+<script src="js/data.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
