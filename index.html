@@ -29,6 +29,7 @@
     <button data-tab="ach">実績</button>
     <button data-tab="shop">星屑ショップ</button>
     <button data-tab="stats">記録</button>
+    <button data-tab="settings">設定</button>
   </div>
 
   <!-- GACHA -->
@@ -90,6 +91,25 @@
     <div class="panelbox">
       <h3>これまでの記録</h3>
       <div class="statgrid" id="statGrid"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="view-settings">
+    <div class="panelbox">
+      <h3>演出</h3>
+      <div class="shopitem">
+        <div class="info"><div class="t">派手な演出</div><div class="s">画面揺れ・チャージ演出・レインボーオーラ・大量の紙吹雪</div></div>
+        <label class="switch"><input type="checkbox" id="setEffects"><span class="sw-slider"></span></label>
+      </div>
+      <div class="shopitem">
+        <div class="info"><div class="t">効果音</div><div class="s">ガチャ演出に合わせて音を鳴らす</div></div>
+        <label class="switch"><input type="checkbox" id="setSound"><span class="sw-slider"></span></label>
+      </div>
+      <div class="shopitem">
+        <div class="info"><div class="t">常に演出をスキップ</div><div class="s">結果を待たずに即座に反映する(演出中は毎回「▶▶ スキップ」でも早送り可)</div></div>
+        <label class="switch"><input type="checkbox" id="setSkip"><span class="sw-slider"></span></label>
+      </div>
     </div>
     <div class="panelbox">
       <h3>データ</h3>

@@ -27,6 +27,7 @@ function freshState() {
       shopUsed: false, offlineClaimed: false,
     },
     feed: [],               // 最近のピック {id, r, t}
+    settings: { effects: true, sound: true, skipAnim: false },
   };
 }
 let S = load();
@@ -42,6 +43,7 @@ function load() {
     base.stats = Object.assign(freshState().stats, d.stats || {});
     base.stats.byR = Object.assign({ N:0,R:0,SR:0,SSR:0,UR:0,LR:0 }, (d.stats && d.stats.byR) || {});
     base.flags = Object.assign(freshState().flags, d.flags || {});
+    base.settings = Object.assign(freshState().settings, d.settings || {});
     base.owned = d.owned || {};
     base.feed = d.feed || [];
     return base;
@@ -228,32 +230,181 @@ function buyShop(id) {
   toast("交換した: " + it.t);
 }
 
+/* ---------- sound (synthesized, no assets) ---------- */
+let actx = null;
+function ensureAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (actx.state === "suspended") actx.resume();
+  return actx;
+}
+function beep(freq, dur, type, delay, gainVal) {
+  if (!S.settings.sound) return;
+  const ctx = ensureAudio(); if (!ctx) return;
+  const t0 = ctx.currentTime + (delay || 0);
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type || "triangle";
+  osc.frequency.setValueAtTime(freq, t0);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.linearRampToValueAtTime(gainVal || 0.12, t0 + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
+}
+function playChargeSound(ms) {
+  if (!S.settings.sound || ms <= 0) return;
+  const ctx = ensureAudio(); if (!ctx) return;
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(110, t0);
+  osc.frequency.exponentialRampToValueAtTime(660, t0 + ms / 1000);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.linearRampToValueAtTime(0.05, t0 + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + ms / 1000 + 0.05);
+}
+const RARITY_SOUND = {
+  N:   [[440, .10]],
+  R:   [[523, .09], [659, .13]],
+  SR:  [[523, .09], [659, .09], [784, .18]],
+  SSR: [[523, .08], [659, .08], [784, .08], [1047, .3]],
+  UR:  [[440, .07], [554, .07], [659, .07], [880, .09], [1175, .38]],
+  LR:  [[392, .07], [494, .07], [587, .07], [698, .07], [880, .07], [1175, .09], [1568, .55]],
+};
+function playRaritySound(r) {
+  if (!S.settings.sound) return;
+  const seq = RARITY_SOUND[r] || RARITY_SOUND.N;
+  let t = 0;
+  seq.forEach(([f, d]) => { beep(f, d, "triangle", t, r === "N" ? 0.07 : 0.14); t += d * 0.85; });
+}
+
 /* ---------- reveal animation ---------- */
 const overlay = document.getElementById("overlay");
-let revealState = null;
+let pendingTimers = [];
+let finishReveal = null;
+
+function schedule(fn, delay) {
+  const id = setTimeout(fn, delay);
+  pendingTimers.push(id);
+  return id;
+}
+function clearPending() {
+  pendingTimers.forEach(clearTimeout);
+  pendingTimers = [];
+}
+
+const BUILDUP_MS = { N: 0, R: 0, SR: 220, SSR: 480, UR: 850, LR: 1350 };
+const CONFETTI_BASE = { N: 0, R: 0, SR: 35, SSR: 90, UR: 150, LR: 220 };
 
 function playReveal(recs, mode) {
+  if (S.settings.skipAnim) { instantFinish(recs); return; }
+
   const maxRank = Math.max(...recs.map(r => rarityRank(r.r)));
-  const topColor = getColor(RARITY_ORDER[maxRank]);
+  const topR = RARITY_ORDER[maxRank];
+  const topColor = getColor(topR);
+  const fx = S.settings.effects;
+
   overlay.innerHTML = "";
+  overlay.classList.remove("shake");
   overlay.classList.add("on");
+  overlay.onclick = null;
+  clearPending();
 
-  const flash = document.createElement("div");
-  flash.className = "flash";
-  flash.style.background = `radial-gradient(circle at 50% 45%, ${topColor}aa, transparent 60%)`;
-  overlay.appendChild(flash);
-  flash.animate([{ opacity: 0 }, { opacity: .9 }, { opacity: 0 }], { duration: 700, easing: "ease-out" });
+  if (fx && maxRank >= rarityRank("UR")) {
+    const aura = document.createElement("div");
+    aura.className = "lr-aura";
+    overlay.appendChild(aura);
+  }
 
-  if (maxRank >= rarityRank("SSR")) burstConfetti(topColor);
+  const flashLayer = document.createElement("div");
+  flashLayer.className = "flash";
+  overlay.appendChild(flashLayer);
 
-  if (recs.length === 1) {
-    revealSingle(recs[0]);
+  const skipBtn = document.createElement("button");
+  skipBtn.className = "skipBtn";
+  skipBtn.textContent = "▶▶ スキップ";
+  skipBtn.onclick = (e) => { e.stopPropagation(); if (finishReveal) finishReveal(); };
+  overlay.appendChild(skipBtn);
+
+  let bodyRendered = false;
+  function renderBody() {
+    if (bodyRendered) return;
+    bodyRendered = true;
+    if (recs.length === 1) revealSingle(recs[0], fx);
+    else revealTen(recs, fx);
+  }
+
+  finishReveal = () => {
+    clearPending();
+    const capsule = overlay.querySelector(".charge-capsule");
+    if (capsule) capsule.remove();
+    renderBody();
+    overlay.querySelectorAll(".ten-cell").forEach(c => c.classList.add("show"));
+    overlay.querySelectorAll(".reveal-single").forEach(c => c.classList.add("show"));
+    const sum = overlay.querySelector(".sum");
+    if (sum) {
+      const news = recs.filter(r => r.new).length;
+      const ssr = recs.filter(r => rarityRank(r.r) >= rarityRank("SSR")).length;
+      sum.textContent = `NEW ${news}件 ・ SSR以上 ${ssr}件`;
+    }
+    const hint = overlay.querySelector(".tap-hint");
+    if (hint) hint.style.display = "";
+    overlay.onclick = closeOverlay;
+  };
+
+  const buildupMs = fx ? (BUILDUP_MS[topR] || 0) : 0;
+
+  const detonate = () => {
+    doFlash(flashLayer, topColor, maxRank);
+    if (fx && maxRank >= rarityRank("SSR")) shakeScreen();
+    if (fx) burstConfetti(topColor, topR, maxRank);
+    playRaritySound(topR);
+    renderBody();
+  };
+
+  if (buildupMs > 0) {
+    const capsule = document.createElement("div");
+    capsule.className = "charge-capsule";
+    capsule.style.color = topColor;
+    capsule.textContent = "🎰";
+    overlay.appendChild(capsule);
+    playChargeSound(buildupMs);
+    schedule(() => { capsule.remove(); detonate(); }, buildupMs);
   } else {
-    revealTen(recs);
+    detonate();
   }
 }
 
-function revealSingle(rec) {
+function instantFinish(recs) {
+  const topR = RARITY_ORDER[Math.max(...recs.map(r => rarityRank(r.r)))];
+  if (recs.length === 1) {
+    const it = ITEM_BY_ID[recs[0].id];
+    toast(`${recs[0].new ? "NEW " : ""}${it.e} ${it.n} (${recs[0].r})`);
+  } else {
+    const news = recs.filter(r => r.new).length;
+    const ssr = recs.filter(r => rarityRank(r.r) >= rarityRank("SSR")).length;
+    toast(`10連結果: NEW ${news}件・SSR以上 ${ssr}件・最高 ${topR}`);
+  }
+  render();
+}
+
+function doFlash(layer, color, maxRank) {
+  layer.style.background = `radial-gradient(circle at 50% 45%, ${color}cc, transparent 60%)`;
+  const pulses = maxRank >= rarityRank("LR") ? 3 : maxRank >= rarityRank("UR") ? 2 : 1;
+  for (let i = 0; i < pulses; i++) {
+    layer.animate([{ opacity: 0 }, { opacity: .95 }, { opacity: 0 }], { duration: 550, delay: i * 260, easing: "ease-out" });
+  }
+}
+function shakeScreen() {
+  overlay.classList.remove("shake");
+  void overlay.offsetWidth;
+  overlay.classList.add("shake");
+}
+
+function revealSingle(rec, fx) {
   const it = ITEM_BY_ID[rec.id];
   const col = getColor(rec.r);
   const box = document.createElement("div");
@@ -269,10 +420,10 @@ function revealSingle(rec) {
     <div class="tap-hint">タップで閉じる</div>`;
   overlay.appendChild(box);
   requestAnimationFrame(() => box.classList.add("show"));
-  overlay.onclick = closeOverlay;
+  schedule(() => { overlay.onclick = closeOverlay; }, 500);
 }
 
-function revealTen(recs) {
+function revealTen(recs, fx) {
   const grid = document.createElement("div");
   grid.className = "ten-grid";
   overlay.appendChild(grid);
@@ -298,43 +449,58 @@ function revealTen(recs) {
   overlay.appendChild(hint);
 
   cells.forEach((c, i) => {
-    setTimeout(() => {
+    schedule(() => {
       c.classList.add("show");
-      if (rarityRank(recs[i].r) >= rarityRank("SSR")) {
-        c.animate([{ boxShadow: `0 0 0 ${getColor(recs[i].r)}` }, { boxShadow: `0 0 26px ${getColor(recs[i].r)}` }, { boxShadow: `0 0 8px ${getColor(recs[i].r)}` }], { duration: 500 });
+      beep(300 + i * 14, 0.05, "square", 0, 0.035);
+      const rk = rarityRank(recs[i].r);
+      if (rk >= rarityRank("SSR")) {
+        c.animate([{ boxShadow: `0 0 0 ${getColor(recs[i].r)}` }, { boxShadow: `0 0 32px ${getColor(recs[i].r)}` }, { boxShadow: `0 0 10px ${getColor(recs[i].r)}` }], { duration: 600 });
+        if (fx) shakeScreen();
       }
-    }, 120 * i);
+    }, 130 * i);
   });
-  setTimeout(() => {
+  schedule(() => {
     const news = recs.filter(r => r.new).length;
     const ssr = recs.filter(r => rarityRank(r.r) >= rarityRank("SSR")).length;
     sum.textContent = `NEW ${news}件 ・ SSR以上 ${ssr}件`;
     hint.style.display = "";
     overlay.onclick = closeOverlay;
-  }, 120 * cells.length + 200);
+  }, 130 * cells.length + 200);
 }
 
 function closeOverlay() {
-  overlay.classList.remove("on");
+  overlay.classList.remove("on", "shake");
   overlay.onclick = null;
+  clearPending();
+  finishReveal = null;
   render();
 }
 
 function getColor(r) { return RARITIES[r].color; }
 
-function burstConfetti(color) {
-  const colors = [color, "#ffffff", "#ffd06b"];
-  for (let i = 0; i < 90; i++) {
+function burstConfetti(color, topR, maxRank) {
+  const base = CONFETTI_BASE[topR] || 0;
+  if (!base) return;
+  const waves = maxRank >= rarityRank("LR") ? 3 : maxRank >= rarityRank("UR") ? 2 : 1;
+  const colors = maxRank >= rarityRank("LR")
+    ? ["#ff5d7e", "#ffb43d", "#3dffcf", "#5fa8ff", "#b06bff", "#ffffff"]
+    : [color, "#ffffff", "#ffd06b"];
+  for (let w = 0; w < waves; w++) {
+    schedule(() => spawnConfettiWave(base, colors), w * 240);
+  }
+}
+function spawnConfettiWave(count, colors) {
+  for (let i = 0; i < count; i++) {
     const d = document.createElement("div");
     d.className = "confetti";
     d.style.left = Math.random() * 100 + "%";
     d.style.background = colors[i % colors.length];
     d.style.transform = `rotate(${Math.random() * 360}deg)`;
     overlay.appendChild(d);
-    const dur = 1400 + Math.random() * 1400;
+    const dur = 1200 + Math.random() * 1600;
     d.animate([
       { transform: `translate(0,0) rotate(0)`, opacity: 1 },
-      { transform: `translate(${(Math.random() - .5) * 260}px, ${window.innerHeight + 40}px) rotate(${Math.random() * 720}deg)`, opacity: .9 },
+      { transform: `translate(${(Math.random() - .5) * 300}px, ${window.innerHeight + 40}px) rotate(${Math.random() * 900}deg)`, opacity: .9 },
     ], { duration: dur, easing: "cubic-bezier(.2,.6,.4,1)" });
     setTimeout(() => d.remove(), dur);
   }
@@ -571,6 +737,21 @@ function init() {
       toast("リセットした。人生やり直し。");
     }
   };
+
+  // settings
+  const chkEffects = document.getElementById("setEffects");
+  const chkSound = document.getElementById("setSound");
+  const chkSkip = document.getElementById("setSkip");
+  chkEffects.checked = S.settings.effects;
+  chkSound.checked = S.settings.sound;
+  chkSkip.checked = S.settings.skipAnim;
+  chkEffects.onchange = () => { S.settings.effects = chkEffects.checked; save(); };
+  chkSound.onchange = () => {
+    S.settings.sound = chkSound.checked;
+    save();
+    if (chkSound.checked) beep(660, 0.12, "triangle", 0, 0.15);
+  };
+  chkSkip.onchange = () => { S.settings.skipAnim = chkSkip.checked; save(); };
 
   // version
   document.getElementById("ver").textContent = "v" + VERSION;
