@@ -1,7 +1,17 @@
 /* ===== GACHA LIFE — data ===== */
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const CHANGELOG = [
+  {
+    v: "1.1.0",
+    d: "2026-09-20",
+    notes: [
+      "引いたキャラが働いて自動でジェムを稼ぐ「キャラ収益」を実装。",
+      "レアリティが高いほど基礎収益が高く、同じキャラを重ねるほど1体あたりの収益も伸びる。",
+      "ガチャ画面に稼働中キャラの人数と合計収益、図鑑カードに個別の収益を表示。",
+      "実績を2つ追加(合計収益10/秒・100/秒到達)。",
+    ],
+  },
   {
     v: "1.0.0",
     d: "2026-08-28",
@@ -23,6 +33,9 @@ const RARITIES = {
   LR:  { key: "LR",  label: "LR",   stars: "✧",     color: "#3dffcf", glow: "#a6fff0", weight: 0.0005 },
 };
 const RARITY_ORDER = ["N", "R", "SR", "SSR", "UR", "LR"];
+
+// キャラ1体あたりの基礎収益(ジェム/秒)。レアリティが高いほど稼ぐ。
+const INCOME_BASE = { N: 0.03, R: 0.1, SR: 0.4, SSR: 1.5, UR: 6, LR: 25 };
 
 // 重複時にもらえる星屑
 const DUST_BY_RARITY = { N: 1, R: 3, SR: 12, SSR: 60, UR: 300, LR: 1500 };
@@ -116,6 +129,22 @@ const ITEMS = [
   { id: "lr_secret", n: "???",                r: "LR", e: "❔", f: "名前も姿も定まらない。図鑑の最後の枠。" },
 ];
 
+const ITEM_BY_ID = Object.fromEntries(ITEMS.map(it => [it.id, it]));
+
+// 1体あたりの収益。同じキャラを重ねるほど(逓減しつつ)伸びる。
+function itemIncome(item, count) {
+  return INCOME_BASE[item.r] * (1 + 0.4 * Math.sqrt(Math.max(0, count - 1)));
+}
+// 所持キャラ全体の合計収益(ジェム/秒)
+function characterIncome(s) {
+  let total = 0;
+  for (const id in s.owned) {
+    const it = ITEM_BY_ID[id];
+    if (it) total += itemIncome(it, s.owned[id]);
+  }
+  return total;
+}
+
 // ガチャ道ランク: [必要累計ガチャ回数, 称号]
 const RANKS = [
   [0,      "見習いガチャ民"],
@@ -181,6 +210,8 @@ const ACHIEVEMENTS = [
   { id: "free10",     n: "タダより",             d: "無料枠を10回使う",                c: s => s.stats.freePulls >= 10 },
   { id: "hero",       n: "勇者を添えて",         d: "『選ばれし勇者アル』を入手",      c: s => !!s.owned["ssr_hero"] },
   { id: "dev",        n: "作った人",             d: "『このゲームの開発者』を入手",    c: s => !!s.owned["lr_dev"] },
+  { id: "income10",   n: "小さな会社",           d: "キャラ収益が合計10/秒に到達",     c: s => characterIncome(s) >= 10 },
+  { id: "income100",  n: "ガチャ財閥",           d: "キャラ収益が合計100/秒に到達",    c: s => characterIncome(s) >= 100 },
 ];
 
 function rankIndex(pulls) {

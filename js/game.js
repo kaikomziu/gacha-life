@@ -2,7 +2,6 @@
 "use strict";
 
 const SAVE_KEY = "gachalife_v1";
-const ITEM_BY_ID = Object.fromEntries(ITEMS.map(it => [it.id, it]));
 const OFFLINE_CAP = 8 * 3600; // 秒
 
 /* ---------- state ---------- */
@@ -63,7 +62,7 @@ function completionBonus() {
 }
 function gemsPerSec() {
   const ri = rankIndex(S.stats.pulls);
-  return +(1 + ri * 0.7 + completionBonus()).toFixed(2);
+  return +(1 + ri * 0.7 + completionBonus() + characterIncome(S)).toFixed(2);
 }
 
 /* ---------- gacha core ---------- */
@@ -400,6 +399,11 @@ function renderGacha() {
   el.innerHTML = `SSR以上まで 残り <b>${Math.max(0, PITY_HARD - p)}</b> 回で確定` +
     (p >= PITY_SOFT ? `　<span style="color:var(--ssr)">🔥ソフト天井発動中</span>` : "");
 
+  const activeChars = Object.keys(S.owned).length;
+  const income = characterIncome(S);
+  document.getElementById("incomeInfo").innerHTML =
+    `💼 稼働中のキャラ <b>${activeChars}</b> 体　合計収益 <b style="color:var(--acc)">+${income.toFixed(2)}/秒</b>`;
+
   // odds
   const oc = document.getElementById("odds");
   const ssrW = (RARITIES.SSR.weight + S.bonusLuck) * 100;
@@ -430,7 +434,8 @@ function renderCollection() {
     return `<div class="card" data-r="${it.r}" data-id="${it.id}">
       ${cnt > 1 ? `<div class="dupe">×${cnt}</div>` : ""}
       <div class="emoji">${it.e}</div><div class="nm">${it.n}</div>
-      <div class="rr">${RARITIES[it.r].stars}</div></div>`;
+      <div class="rr">${RARITIES[it.r].stars}</div>
+      <div class="income">+${itemIncome(it, cnt).toFixed(2)}/秒</div></div>`;
   }).join("");
   g.querySelectorAll(".card[data-id]").forEach(c => c.onclick = () => openDetail(c.dataset.id));
 }
@@ -446,6 +451,7 @@ function openDetail(id) {
     <div class="rr" style="color:${getColor(it.r)}">${RARITIES[it.r].stars} ${it.r}</div>
     <div class="f">「${it.f}」</div>
     <div class="meta">所持数 ×${cnt}　/　重複時の星屑 +${DUST_BY_RARITY[it.r]}</div>
+    <div class="meta">収益 <b style="color:var(--acc)">+${itemIncome(it, cnt).toFixed(2)}/秒</b></div>
     <button onclick="document.getElementById('modal').classList.remove('on')">とじる</button>`;
   m.classList.add("on");
 }
@@ -477,6 +483,8 @@ function renderStats() {
     ["消費した総ジェム", fmt(s.gemsSpent)],
     ["獲得した総星屑", fmt(s.dustEarned)],
     ["現在の天井カウント", `${S.pityCount} / ${PITY_HARD}`],
+    ["稼働中のキャラ数", fmt(ownedCount(S))],
+    ["キャラからの合計収益", "+" + characterIncome(S).toFixed(2) + "/秒"],
     ["最高レア", best ? `${best.e} ${best.n} (${best.r})` : "—"],
     ["N 排出数", fmt(s.byR.N)],
     ["R 排出数", fmt(s.byR.R)],
